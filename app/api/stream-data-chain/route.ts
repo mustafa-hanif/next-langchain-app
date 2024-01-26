@@ -24,7 +24,7 @@ Question: {question}`;
 export async function POST(req: Request) {
   const { prompt: value } = await req.json();
 
-  const model = new OpenAI({ temperature: 0.2, streaming: true });
+  const model = new OpenAI({ temperature: 0.5, streaming: true, modelName: "gpt-3.5-turbo-1106" });
   const prompt = PromptTemplate.fromTemplate(TEMPLATE);
   const pineconeIndex = pc.index('test');
   const outputParser = new StringOutputParser();
@@ -33,7 +33,7 @@ export async function POST(req: Request) {
     modelName: "text-embedding-3-large",
   });
   const pineconeStore = new PineconeStore(embeddings, { pineconeIndex });
-  const retriever = pineconeStore.asRetriever(2);
+  const retriever = pineconeStore.asRetriever(4);
 
   const chain = RunnableSequence.from([
     {
