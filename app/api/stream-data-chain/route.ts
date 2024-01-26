@@ -1,35 +1,66 @@
-import {
-  LangChainStream,
-  StreamingTextResponse,
-  experimental_StreamData,
-} from 'ai';
+
+import { StreamingTextResponse, LangChainStream, experimental_StreamData } from 'ai';
+
+import { ChatOpenAI, OpenAI } from '@langchain/openai';
+import { BytesOutputParser } from '@langchain/core/output_parsers';
+import { PromptTemplate } from '@langchain/core/prompts';
+import { Pinecone } from '@pinecone-database/pinecone';
+import { OpenAIEmbeddings } from "@langchain/openai";
+import { PineconeStore } from "@langchain/pinecone";
+import { formatDocumentsAsString } from "langchain/util/document";
+import { RunnableSequence, RunnablePassthrough } from "@langchain/core/runnables";
+import { StringOutputParser } from "@langchain/core/output_parsers";
 import { LLMChain } from 'langchain/chains';
-import { OpenAI } from 'langchain/llms/openai';
-import { PromptTemplate } from 'langchain/prompts';
 
 export const runtime = 'edge';
+const pc = new Pinecone({
+  apiKey: '337d60a7-8b68-434e-abfb-5fe104fa187e'
+});
+const TEMPLATE = `Answer the question based only on the following context:
+{context}
+
+Question: {question}`;
 
 export async function POST(req: Request) {
   const { prompt: value } = await req.json();
 
-  const model = new OpenAI({ temperature: 0, streaming: true });
-  const prompt = PromptTemplate.fromTemplate(
-    'What is a good name for a company that makes {product}?',
-  );
-  const chain = new LLMChain({ llm: model, prompt });
+  const model = new OpenAI({ temperature: 0.2, streaming: true });
+  const prompt = PromptTemplate.fromTemplate(TEMPLATE);
+  const pineconeIndex = pc.index('test');
+  const outputParser = new StringOutputParser();
 
-  const data = new experimental_StreamData();
+  const embeddings = new OpenAIEmbeddings({
+    modelName: "text-embedding-3-large",
+  });
+  const pineconeStore = new PineconeStore(embeddings, { pineconeIndex });
+  const retriever = pineconeStore.asRetriever(2);
 
-  // important: use LangChainStream from the AI SDK:
-  const { stream, handlers } = LangChainStream({
-    onFinal: () => {
-      data.append(JSON.stringify({ key: 'value' })); // example
-      data.close();
+  const chain = RunnableSequence.from([
+    {
+      context: retriever.pipe(formatDocumentsAsString),
+      question: new RunnablePassthrough(),
     },
-    experimental_streamData: true,
+    prompt,
+    model,
+    outputParser
+  ]);
+
+  const stream = await chain.stream(value);
+  
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+
+  let first_entry_skipped = false;
+  const transformStream = new TransformStream({
+    transform(chunk, controller) {  
+      if  (!first_entry_skipped) {
+          first_entry_skipped = true;
+      }
+      else {
+        controller.enqueue(chunk.toString());
+      }
+    },
   });
 
-  await chain.stream({ product: value }, { callbacks: [handlers] });
-
-  return new StreamingTextResponse(stream, {}, data);
+    return new StreamingTextResponse(stream.pipeThrough(transformStream));
 }
