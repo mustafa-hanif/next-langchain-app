@@ -1,5 +1,6 @@
 'use client';
 
+// update
 import { useCompletion } from 'ai/react';
 
 export default function Chat() {
