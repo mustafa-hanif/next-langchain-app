@@ -12,7 +12,6 @@ import { RunnableSequence, RunnablePassthrough } from "@langchain/core/runnables
 import { StringOutputParser } from "@langchain/core/output_parsers";
 import { LLMChain } from 'langchain/chains';
 
-export const runtime = 'edge';
 const pc = new Pinecone({
   apiKey: '337d60a7-8b68-434e-abfb-5fe104fa187e'
 });
